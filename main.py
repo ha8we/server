@@ -216,7 +216,8 @@ def PWRcontrol():
                     tmp = aktolt[db - 1]
                     print(tmp[0])
                     imaxsqlupdate(str("I1max"),str(int(tmp[2]*tmp1)) , str(tmp[0]))
-                   
+            else:##itt kell kilőni töltöt starttime alapján
+                print("le kell állítani valakit")
 
     except:
         print("HIBA+++++++++++ " + query)
