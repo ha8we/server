@@ -40,19 +40,15 @@ def connect_mqtt() -> mqtt_client:
 """
 def on_message(mqtt_client, user_data, message):
     cursor = mydb.cursor()
-
     payload = message.payload.decode('utf-8')
     print(payload)
     x = payload.split(";")
-
   #  query = "INSERT INTO `PowerMeter` (`LastData`, `MAC`, `U12`, `U23`, `U31`, `I1`, `I2`, `I3`, `INe`, `Freq`, `PF`, `P`, `Q`, `S`, `Ph`, `Qh`, `Sh`) VALUES (TIMESTAMP(CURRENT_TIMESTAMP),'"+x[0]+"','"+x[1]+"', '"+x[2]+"', '"+x[3]+"', '"+x[4]+"', '"+x[5]+"', '"+x[6]+"', '"+x[7]+"', '"+x[8]+"', '"+x[9]+"', '"+x[10]+"', '"+x[11]+"', '"+x[12]+"', '"+x[13]+"', '"+x[14]+"', '"+x[15]+"')"
     try:
    #     cursor.execute(query)
         mydb.commit()
     except:
         print("nem megfelelo uzenet")
-
-
     print(query)
 """
 def getdevice(x):
@@ -166,9 +162,9 @@ def Readyclient(x,y):
         print(x[0]+" Töltésre kész! állapota")
     except:
         print("HIBA " +query)
-def getcharge():
+def getcharge(s):
     cursor = mydb.cursor()
-    cursor.execute("SELECT `MAC`,`I1`,`I2`,`I3`,`Priority` FROM `Device` WHERE `Charging`=1")
+    cursor.execute("SELECT `MAC`,`"+str(s) +"`,`Priority` FROM `Device` WHERE `Charging`=1")
     result = cursor.fetchall()
     return result
 
@@ -187,6 +183,7 @@ def PWRcontrol():
         I2 = tmp[4]
         I3 = tmp[5]
         tart=tmp[7]
+        tart = 0.9
         print("A maximális áramok I1:" +str(tmp[0])+ " I2: " + str(tmp[1]) +" I3: " + str(tmp[2]))
         print("Aktuális áramok I1:" + str(I1) + " I2: " + str(I2) + " I3: " + str(I3))
         TI1=0
@@ -196,24 +193,43 @@ def PWRcontrol():
         dI2=0
         dI3=0
         szummprio=0
-        if I1>I1max or I2>I2max or I3>I3max:    #be kell avatkozni
-            aktolt=getcharge()
+        if I1>(I1max *tart):    #be kell avatkozni
+            aktolt=getcharge("I1")
             db= len(aktolt)
             for y in range(0,db):
                 tmp=aktolt[db-1]
-                TI1=TI1+int(tmp[1])
-                TI2 = TI2 + int(tmp[2])
-                TI3 = TI3 + int(tmp[3])
-                szummprio= szummprio+int(tmp[4])
+                TI1=TI1+int(tmp[1]) #töltők áramösszege
+                szummprio= szummprio+int(tmp[2])
                 print(int(TI1))
-            dI1=  I1max-I1-TI1
-            dI2 = I2max-I2 - TI2
-            dI3 = I3max-I3 - TI3          #szabad áramok
-            print(TI1, TI2 , TI3, dI1, dI2, dI3,szummprio)
+            dI1=  I1-TI1
+            dI1= (I1max*tart)-dI1-3 #kicsit lőjünk alá
+                   #szabad szétosztható áramok
+            print(TI1,  dI1, szummprio, db)
+            tmp1=dI1/szummprio
+            if tmp1 >= 6:
+                print("jeeeee")
+                for y in range(0,db):
+                    tmp=aktolt[db-1]
+                    print(tmp[0])
+                    client.publish("/charger/control", str(tmp[0])+";"+ str(int(tmp[2]*tmp1)))
+                for y in range(0, db): #database max update
+                    tmp = aktolt[db - 1]
+                    print(tmp[0])
+                    imaxsqlupdate(str("I1max"),str(int(tmp[2]*tmp1)) , str(tmp[0]))
+                   
+
+    except:
+        print("HIBA+++++++++++ " + query)
+
+def imaxsqlupdate(L,I,MAC):
+    cursor = mydb.cursor()
+    try:
+        query ="UPDATE `Device` SET `"+L+"`= "+I + " WHERE `MAC`= '" + str(MAC)+ "'"
+        cursor.execute(query)
+        mydb.commit()
+        print("SIKERES I FRISSITÉS"+query)
     except:
         print("HIBA " + query)
-
-
 
 def subscribe(client: mqtt_client):
     def on_message(client, userdata, msg):
@@ -251,10 +267,11 @@ def subscribe(client: mqtt_client):
     client.subscribe(TOPIC1)
     client.on_message = on_message
 
-
+client = connect_mqtt()
 def run():
-    client = connect_mqtt()
+
     subscribe(client)
+    client.publish("house/light", "ON")
     client.loop_forever()
 
 
