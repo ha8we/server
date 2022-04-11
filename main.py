@@ -2,7 +2,7 @@ from paho.mqtt import client as mqtt_client
 import mysql.connector
 from time import time
 import random
-
+from datetime import datetime
 MQTT_HOST = 'ha8we.hu'
 MQTT_PORT = 1883
 client_id = f'python-mqtt-{random.randint(0, 100)}'
@@ -17,6 +17,24 @@ mydb = mysql.connector.connect(
     database="Charger"
 )
 
+
+def Lastopt(x):
+    global Lstopt
+    Lstopt = x
+def globChange(x):
+    global Change
+    Change = x
+
+def Lastctrl(x):
+    global Lstctrl
+    Lstctrl = x
+def Lastpwr(x):
+    global Lstpwr
+    Lstpwr = x
+globChange(0)
+Lastpwr(0)
+Lastctrl(0)
+Lastopt(0)
 MacPowermeter = "ffeeddccbbaa"  # fogymérő MAC ADRESS
 
 print(mydb)
@@ -156,21 +174,63 @@ def updateclient(x,mac):
 def Readyclient(x,y):
     cursor = mydb.cursor()
     try:
-        query ="UPDATE `Device` SET `Ready` = "+ str(y) +" WHERE  `MAC`=" + x[0]
+        query ="UPDATE `Device` SET `Ready` = "+ str(y) +" WHERE  `MAC`='" + x+"'"
         cursor.execute(query)
         mydb.commit()
-        print(x[0]+" Töltésre kész! állapota")
+        print(x+" Töltésre kész! állapota")
     except:
         print("HIBA " +query)
+def Startclient(x,y):
+    cursor = mydb.cursor()
+    try:
+        now = datetime.now()
+        timestamp = datetime.timestamp(now)
+        dt_object = datetime.fromtimestamp(timestamp + 1800)
+        if y == 1:
+            now = datetime.now()
+            timestamp = datetime.timestamp(now)
+            dt_object = datetime.fromtimestamp(timestamp + 1800)
+            query = "UPDATE `Device` SET `Charging` = " + str(y) + ",`chargestart` = CURRENT_TIMESTAMP ,`Pause` = 0, `Guardtime` = '"+str(dt_object)+"' WHERE  `MAC`='" + x + "'"
+            globChange(1)
+        else:
+            query = "UPDATE `Device` SET `Ready` = 0, `Charging` = " + str(y) + ",`chargestart` = NULL , `Guardtime` = NULL WHERE  `MAC`='" + x + "'"
+        cursor.execute(query)
+        mydb.commit()
+        print(x+" Töltés! állapota: SET")
+        print("dt_object =", dt_object)
+        print(timestamp)                ###itt kell egy pwr management
+    except:
+        print("HIBA " +query)
+
 def getcharge(s):
     cursor = mydb.cursor()
-    cursor.execute("SELECT `MAC`,`"+str(s) +"`,`Priority` FROM `Device` WHERE `Charging`=1")
+    cursor.execute("SELECT `MAC`,`"+str(s) +"`, `Priority`FROM `Device` WHERE `Charging`=1 ORDER BY `chargestart`")
     result = cursor.fetchall()
     return result
+def getpause(s):
+    cursor = mydb.cursor()
+    cursor.execute("SELECT `MAC`,`" + str(s) + "`, `Priority`FROM `Device` WHERE `Pause` = 1 ORDER BY `Guardtime`")
+    result = cursor.fetchall()
+    return result
+def pause(tmp): #stop küldés mac /sql pause bejegyez(guardal i=0,charge=0)/
+    client.publish("/charger/control/",tmp + ";PAUSE")
+    cursor = mydb.cursor()
+    try:
+        now = datetime.now()
+        timestamp = datetime.timestamp(now)
+        dt_object = datetime.fromtimestamp(timestamp + 1800)
+        query = "UPDATE `Device` SET `Charging` = 0" + ",`I1` = 0 ,`I2` = 0, `I3` = 0, `Pause` = 1, `Guardtime` = '"+str(dt_object)+"' WHERE  `MAC`='" + tmp + "'" #i1re figyelni
+
+        cursor.execute(query)
+        mydb.commit()
+        print(timestamp)
+    except:
+        print("HIBA " +query)
 
 def PWRcontrol():
     cursor = mydb.cursor()
     try:
+
         query = "SELECT `Max I1`,`Max I2`,`Max I3`,`I1`,`I2`,`I3`,`LastData`, `Tartalek`  FROM `System` WHERE 1"
         cursor.execute(query)
         result = cursor.fetchall()
@@ -193,32 +253,90 @@ def PWRcontrol():
         dI2=0
         dI3=0
         szummprio=0
-        if I1>(I1max *tart):    #be kell avatkozni
+
+        if (I1>(I1max *tart) ) or (Change ==1):    #be kell avatkozni
+            globChange(0)
             aktolt=getcharge("I1")
             db= len(aktolt)
             for y in range(0,db):
-                tmp=aktolt[db-1]
+                tmp=aktolt[y]
                 TI1=TI1+int(tmp[1]) #töltők áramösszege
                 szummprio= szummprio+int(tmp[2])
                 print(int(TI1))
             dI1=  I1-TI1
-            dI1= (I1max*tart)-dI1-3 #kicsit lőjünk alá
+            dI1= (I1max*tart)-dI1-5 #kicsit lőjünk alá
                    #szabad szétosztható áramok
             print(TI1,  dI1, szummprio, db)
             tmp1=dI1/szummprio
+            if tmp1 > 32:
+                tmp1 = 32
             if tmp1 >= 6:
                 print("jeeeee")
-                for y in range(0,db):
-                    tmp=aktolt[db-1]
+                for y in range(db):
+                    tmp=aktolt[y]
                     print(tmp[0])
-                    client.publish("/charger/control", str(tmp[0])+";"+ str(int(tmp[2]*tmp1)))
+                    print(y)
+
+                    client.publish("/charger/control/", str(tmp[0])+";"+ str(int(tmp[2]*tmp1)))
                 for y in range(0, db): #database max update
-                    tmp = aktolt[db - 1]
+                    tmp = aktolt[y]
                     print(tmp[0])
                     imaxsqlupdate(str("I1max"),str(int(tmp[2]*tmp1)) , str(tmp[0]))
-            else:##itt kell kilőni töltöt starttime alapján
-                print("le kell állítani valakit")
+            else:##itt kell kilőni töltöt starttime alapján SELECT `MAC`,`Guardtime` FROM `Device`  WHERE `Charging`=1 ORDER BY `chargestart`
+                #töltőáram kiszámolása
+                ndb=int((dI1/6))
+                ndb=db-ndb
+                for y in range(ndb):
+                    tmp = aktolt[y]
+                    print("stop: "+str(tmp[0]))
+                    pause(str(tmp[0]))
+                #6 amperkiküld
+                    aktolt=getcharge("I1")
+                    db = len(aktolt)
+                    for y in range(db):
+                        tmp = aktolt[y]
+                        print(tmp[0])
+                        print(y)
+                        client.publish("/charger/control/", str(tmp[0]) + ";6")
+                    print(tmp)
+                print("le kell állítani valakit "+str(ndb))
+        elif ((I1-5)<(I1max *tart) ) :
+            pausech = getpause("I1")
+            pdb = len(pausech)
+            if(pdb==0):     #mindenki tölt
 
+                now = datetime.now()
+                timestamp = datetime.timestamp(now)
+                if (Lstopt + 30) < timestamp:
+                    Lastopt(timestamp)
+                    globChange(1)
+
+
+            else:
+                print("van "+str(pdb) +" db szünetelő töltő")
+                aktolt = getcharge("I1")
+                db = len(aktolt)
+                if db > 0:
+                    for y in range(0, db):
+                        tmp = aktolt[y]
+                        TI1 = TI1 + int(tmp[1])  # töltők áramösszege
+                        szummprio = szummprio + int(tmp[2])
+                        print(int(TI1))
+                    dI1 = I1 - TI1
+                    dI1 = (I1max * tart) - dI1 - 5  # kicsit lőjünk alá
+                    # szabad szétosztható áramok
+                    print(TI1, dI1, szummprio, db)
+                    tmp1 = int(dI1 / 6)
+                else:
+                    tmp1=int((I1max*tart)-I1)
+                print(tmp1)
+                if tmp1>pdb:
+                    tmp1=pdb
+                #visszatesszük a töltőket
+                for y in range(pdb):
+                    x=pausech[y]
+                    Startclient(x[0], 1)
+                    print("RESUME"+ str(x))
     except:
         print("HIBA+++++++++++ " + query)
 
@@ -238,18 +356,29 @@ def subscribe(client: mqtt_client):
         payload = msg.payload.decode()
         x = payload.split(";")
         if x[0] == MacPowermeter:
-            savesqlpwrmeter(x)
-            PWRcontrol()
+            now = datetime.now()
+            timestamp = datetime.timestamp(now)
+            if (Lstpwr + 15) < timestamp:
+                Lastpwr(timestamp)
+                savesqlpwrmeter(x)
+
+            if (Lstctrl + 15) < timestamp:
+                Lastctrl(timestamp)
+                PWRcontrol()
+
         else:
 
             if x[1] == "START" : #itt mindenkit meg kell kérni egy státuszra/vagy leszajuk és az utolsó adatok szerint járunk el
                 print(x[1])
+
             elif x[1] == "READY":
-                Readyclient(x, 1)
+                Readyclient(x[0], 1)
+                Startclient(x[0], 1)
                 print("READy"+x[1])
             elif x[1] == "STOP":
-                Readyclient(x, 1)
-                print("STOP" + x[1])
+                #Readyclient(x, 0)
+                Startclient(x[0], 0)
+                print("STOP" + x[0])
             else:
                 device=getdevice(x)  #EZ MAJD külső szál lesz
                                     #töltés
