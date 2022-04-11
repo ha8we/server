@@ -300,7 +300,7 @@ def PWRcontrol():
                         client.publish("/charger/control/", str(tmp[0]) + ";6")
                     print(tmp)
                 print("le kell állítani valakit "+str(ndb))
-        elif ((I1-5)<(I1max *tart) ) :
+        elif ((I1)<((I1max *tart)-10) ) :
             pausech = getpause("I1")
             pdb = len(pausech)
             if(pdb==0):     #mindenki tölt
