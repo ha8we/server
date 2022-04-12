@@ -213,7 +213,7 @@ def getpause(s):
     result = cursor.fetchall()
     return result
 def pause(tmp): #stop küldés mac /sql pause bejegyez(guardal i=0,charge=0)/
-    client.publish("/charger/control/",tmp + ";PAUSE")
+    client.publish("/charger/control/",tmp + ";Pause")
     cursor = mydb.cursor()
     try:
         now = datetime.now()
@@ -256,6 +256,10 @@ def PWRcontrol():
 
         if (I1>(I1max *tart) ) or (Change ==1):    #be kell avatkozni
             globChange(0)
+            now = datetime.now()
+            timestamp = datetime.timestamp(now)
+
+            Lastctrl(timestamp + 15)
             aktolt=getcharge("I1")
             db= len(aktolt)
             for y in range(0,db):
@@ -328,7 +332,7 @@ def PWRcontrol():
                     print(TI1, dI1, szummprio, db)
                     tmp1 = int(dI1 / 6)
                 else:
-                    tmp1=int((I1max*tart)-I1)
+                    tmp1=int(((I1max*tart)-I1)/6)
                 print(tmp1)
                 if tmp1>pdb:
                     tmp1=pdb
@@ -362,8 +366,8 @@ def subscribe(client: mqtt_client):
                 Lastpwr(timestamp)
                 savesqlpwrmeter(x)
 
-            if (Lstctrl + 15) < timestamp:
-                Lastctrl(timestamp)
+            if (Lstctrl) < timestamp:
+
                 PWRcontrol()
 
         else:
@@ -371,12 +375,12 @@ def subscribe(client: mqtt_client):
             if x[1] == "START" : #itt mindenkit meg kell kérni egy státuszra/vagy leszajuk és az utolsó adatok szerint járunk el
                 print(x[1])
 
-            elif x[1] == "READY":
+            elif x[1] == "StartRequest":
                 Readyclient(x[0], 1)
                 Startclient(x[0], 1)
                 print("READy"+x[1])
-            elif x[1] == "STOP":
-                #Readyclient(x, 0)
+            elif x[1] == "Stop":
+                Readyclient(x[0], 0)
                 Startclient(x[0], 0)
                 print("STOP" + x[0])
             else:
