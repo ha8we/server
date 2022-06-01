@@ -3,6 +3,7 @@ import mysql.connector
 from time import time
 import random
 from datetime import datetime
+#MQTT_HOST = '127.0.0.1'
 MQTT_HOST = 'ha8we.hu'
 MQTT_PORT = 1883
 client_id = f'python-mqtt-{random.randint(0, 100)}'
@@ -11,10 +12,12 @@ MQTT_PASSWORD = ''
 TOPIC = '/charger/powermeter/'
 TOPIC1 = '/charger/Control/'
 mydb = mysql.connector.connect(
+  #  host="127.0.0.1",
     host="ha8we.hu",
     user="feri",
     password="mJtWrHciNkwwWZRS",
-    database="Charger"
+    database="Charger",
+
 )
 
 
@@ -35,8 +38,8 @@ globChange(0)
 Lastpwr(0)
 Lastctrl(0)
 Lastopt(0)
-MacPowermeter = "ffeeddccbbaa"  # fogymérő MAC ADRESS
-
+#MacPowermeter = "ffeeddccbbaa"  # fogymĂ©rĹ‘ MAC ADRESS e8eb1be06e39;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;
+MacPowermeter = "e8eb1be06e39"
 print(mydb)
 
 
@@ -87,7 +90,7 @@ def savesqlpwrmeter(x):
                     x[12] + "', '" + x[13] + "', '" + x[14] + "', '" + x[15] + "')"
             cursor.execute(query)
             mydb.commit()
-            print(query)
+        #    print(query)
         except:
             print("nem megfelelo uzenet")
 
@@ -95,7 +98,7 @@ def savesqlpwrmeter(x):
             query = "UPDATE `System` SET `I1` = "+ x[4] +" ,`I2` = "+ x[5]+" ,`I3` = "+ x[6] +" WHERE 1"
             cursor.execute(query)
             mydb.commit()
-            print(x[0] + " PWR ref")
+        #    print(x[0] + " PWR ref")
         except:
             print("HIBA " + query)
 
@@ -127,7 +130,7 @@ def savesqlclientpwr(x,mac):
                 I2 = x[6]
             elif (mac[3] == 3):
                 I3 = x[6]
-            query = "INSERT INTO `"+mac[0]+"` (`LastData`, `MAC`, `U12`, `U23`, `U31`, `I1`, `I2`, `I3`, `INe`, `Freq`, `PF`, `P`, `Q`, `S`, `Ph`, `Qh`, `Sh`) VALUES (TIMESTAMP(CURRENT_TIMESTAMP),'" + \
+            query = "INSERT INTO `"+"chargerdata"+"` (`LastData`, `MAC`, `U12`, `U23`, `U31`, `I1`, `I2`, `I3`, `INe`, `Freq`, `PF`, `P`, `Q`, `S`, `Ph`, `Qh`, `Sh`) VALUES (TIMESTAMP(CURRENT_TIMESTAMP),'" + \
                     x[0] + "','" + x[1] + "', '" + x[2] + "', '" + x[3] + "', '" + str(I1) + "', '" + str(I2) + "', '" + str(I3)+ "', '" + x[7] + "', '" + x[8] + "', '" + x[9] + "', '" + x[10] + "', '" + x[11] + "', '" + \
                     x[12] + "', '" + x[13] + "', '" + x[14] + "', '" + x[15] + "')"
             cursor.execute(query)
@@ -177,9 +180,99 @@ def Readyclient(x,y):
         query ="UPDATE `Device` SET `Ready` = "+ str(y) +" WHERE  `MAC`='" + x+"'"
         cursor.execute(query)
         mydb.commit()
-        print(x+" Töltésre kész! állapota")
+        print(x+" TĂ¶ltĂ©sre kĂ©sz! Ăˇllapota")
     except:
         print("HIBA " +query)
+
+def StartInvoice(mac):
+    print(mac + " bejegyzés")
+    cursor = mydb.cursor()
+    #utolsó pwr lekérdezése
+    lastpower=0
+
+    try:
+        query = "SELECT `LastData`, `P`  FROM `chargerdata` where `MAC`='"+str(mac)+"' ORDER BY `LastData` DESC"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        mydb.commit()
+
+        tmp = result[0]
+        lastpower=tmp[1]
+        print(tmp[0])
+    except:
+        lastpower=0
+
+##kezelni kell majd a táblatörlés miatti adatvesztést
+
+
+    try:
+
+
+        query = "INSERT INTO `Invoice` (`Startime`, `MAC`, `Stoptime`, `Pstart`, `Pstop`, `AVGI`) VALUES (TIMESTAMP(CURRENT_TIMESTAMP), '"+str(mac)+"', NULL, '"+str(lastpower)+"', '0', '0')"
+        cursor.execute(query)
+        mydb.commit()
+    except:
+        print("HIBA " + query)
+
+
+def StopInvoice(mac):
+    print(mac + " bejegyzés")
+    cursor = mydb.cursor()
+    avgi=0
+    starttime=0
+    stoptime =0
+    try:
+        query = "SELECT `LastData`, `P`  FROM `chargerdata` where `MAC`='"+str(mac)+"' ORDER BY `LastData` DESC"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        mydb.commit()
+        tmp = result[0]
+        lastpower=tmp[1]
+    except:
+        lastpower=0
+
+    try:
+        query = "SELECT `Startime` FROM `Invoice` WHERE `MAC`='"+str(mac)+"' ORDER BY `Startime` DESC"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        mydb.commit()
+        tmp = result[0]
+        starttime=tmp[0]
+    except:
+        starttime=0
+        print("bakker" + query)
+    try:
+        query = "UPDATE `Invoice` SET `Stoptime`= CURRENT_TIMESTAMP,`Pstop`='"+str(lastpower)+"',`AVGI`='0' WHERE `Startime`='"+str(starttime)+"' AND `MAC`='"+str(mac)+"'"
+        cursor.execute(query)
+        mydb.commit()
+        print("je " + query)
+    except:
+        print("HIBA " + query)
+
+   #avgi kalkuláció
+ """
+    try:
+        query = "SELECT `Startime`,`Stoptime` FROM `Invoice` WHERE `MAC`='"+str(mac)+"' ORDER BY `Startime` DESC"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        mydb.commit()
+        tmp = result[0]
+        starttime=tmp[0]
+        stoptime=tmp[1]
+
+        
+    except:
+        starttime=0
+        print("bakker" + query)
+    try:
+        query = "UPDATE `Invoice` SET `Stoptime`= CURRENT_TIMESTAMP,`Pstop`='"+str(lastpower)+"',`AVGI`='0' WHERE `Startime`='"+str(starttime)+"' AND `MAC`='"+str(mac)+"'"
+        cursor.execute(query)
+        mydb.commit()
+        print("je " + query)
+    except:
+        print("HIBA " + query)
+"""
+
 def Startclient(x,y):
     cursor = mydb.cursor()
     try:
@@ -191,28 +284,52 @@ def Startclient(x,y):
             timestamp = datetime.timestamp(now)
             dt_object = datetime.fromtimestamp(timestamp + 1800)
             query = "UPDATE `Device` SET `Charging` = " + str(y) + ",`chargestart` = CURRENT_TIMESTAMP ,`Pause` = 0, `Guardtime` = '"+str(dt_object)+"' WHERE  `MAC`='" + x + "'"
+            cursor.execute(query)
             globChange(1)
+            StartInvoice(x)
+
         else:
             query = "UPDATE `Device` SET `Ready` = 0, `Charging` = " + str(y) + ",`chargestart` = NULL , `Guardtime` = NULL WHERE  `MAC`='" + x + "'"
-        cursor.execute(query)
+            cursor.execute(query)
+            StopInvoice(x)
         mydb.commit()
-        print(x+" Töltés! állapota: SET")
+        print(x+" TĂ¶ltĂ©s! Ăˇllapota: SET")
         print("dt_object =", dt_object)
-        print(timestamp)                ###itt kell egy pwr management
+    #    print(timestamp)                ###itt kell egy pwr management
     except:
         print("HIBA " +query)
+
+def deadcharger():
+    cursor = mydb.cursor()
+    try:
+        query = "  SELECT `MAC`, `I1`, `Ready`, `Charging` FROM `Device` WHERE 1"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        mydb.commit()
+        db = len(result)
+       # print(db)
+        for y in range(0, db):
+            tmp = result[y]
+
+            if((tmp[1]>0 ) and tmp[2]==0 and tmp[3]==0):
+                print(tmp)
+                pause(tmp[0])
+    except:
+        print(result[0])
 
 def getcharge(s):
     cursor = mydb.cursor()
     cursor.execute("SELECT `MAC`,`"+str(s) +"`, `Priority`FROM `Device` WHERE `Charging`=1 ORDER BY `chargestart`")
     result = cursor.fetchall()
     return result
+
 def getpause(s):
     cursor = mydb.cursor()
     cursor.execute("SELECT `MAC`,`" + str(s) + "`, `Priority`FROM `Device` WHERE `Pause` = 1 ORDER BY `Guardtime`")
     result = cursor.fetchall()
     return result
-def pause(tmp): #stop küldés mac /sql pause bejegyez(guardal i=0,charge=0)/
+
+def pause(tmp): #stop kĂĽldĂ©s mac /sql pause bejegyez(guardal i=0,charge=0)/
     client.publish("/charger/control/",tmp + ";Pause")
     cursor = mydb.cursor()
     try:
@@ -230,7 +347,7 @@ def pause(tmp): #stop küldés mac /sql pause bejegyez(guardal i=0,charge=0)/
 def PWRcontrol():
     cursor = mydb.cursor()
     try:
-
+        deadcharger()
         query = "SELECT `Max I1`,`Max I2`,`Max I3`,`I1`,`I2`,`I3`,`LastData`, `Tartalek`  FROM `System` WHERE 1"
         cursor.execute(query)
         result = cursor.fetchall()
@@ -243,9 +360,9 @@ def PWRcontrol():
         I2 = tmp[4]
         I3 = tmp[5]
         tart=tmp[7]
-        tart = 0.9
-        print("A maximális áramok I1:" +str(tmp[0])+ " I2: " + str(tmp[1]) +" I3: " + str(tmp[2]))
-        print("Aktuális áramok I1:" + str(I1) + " I2: " + str(I2) + " I3: " + str(I3))
+        tart = 0.98
+        print("A maximĂˇlis Ăˇramok I1:" +str(tmp[0])+ " I2: " + str(tmp[1]) +" I3: " + str(tmp[2]))
+        print("AktuĂˇlis Ăˇramok I1:" + str(I1) + " I2: " + str(I2) + " I3: " + str(I3))
         TI1=0
         TI2=0
         TI3=0
@@ -254,22 +371,22 @@ def PWRcontrol():
         dI3=0
         szummprio=0
 
-        if (I1>(I1max *tart) ) or (Change ==1):    #be kell avatkozni
+        if (I1>((I1max *tart) -1)) or (Change ==1):    #be kell avatkozni
             globChange(0)
             now = datetime.now()
             timestamp = datetime.timestamp(now)
 
-            Lastctrl(timestamp + 15)
+            Lastctrl(timestamp + 3)
             aktolt=getcharge("I1")
             db= len(aktolt)
             for y in range(0,db):
                 tmp=aktolt[y]
-                TI1=TI1+int(tmp[1]) #töltők áramösszege
+                TI1=TI1+int(tmp[1]) #tĂ¶ltĹ‘k ĂˇramĂ¶sszege
                 szummprio= szummprio+int(tmp[2])
                 print(int(TI1))
             dI1=  I1-TI1
-            dI1= (I1max*tart)-dI1-5 #kicsit lőjünk alá
-                   #szabad szétosztható áramok
+            dI1= (I1max*tart)-dI1-0 #kicsit lĹ‘jĂĽnk alĂˇ
+                   #szabad szĂ©toszthatĂł Ăˇramok
             print(TI1,  dI1, szummprio, db)
             tmp1=dI1/szummprio
             if tmp1 > 32:
@@ -281,20 +398,20 @@ def PWRcontrol():
                     print(tmp[0])
                     print(y)
 
-                    client.publish("/charger/control/", str(tmp[0])+";"+ str(int(tmp[2]*tmp1)))
+                    client.publish("/charger/control/", str(tmp[0])+";"+ str(int(tmp[2]*tmp1))+";")
                 for y in range(0, db): #database max update
                     tmp = aktolt[y]
                     print(tmp[0])
                     imaxsqlupdate(str("I1max"),str(int(tmp[2]*tmp1)) , str(tmp[0]))
-            else:##itt kell kilőni töltöt starttime alapján SELECT `MAC`,`Guardtime` FROM `Device`  WHERE `Charging`=1 ORDER BY `chargestart`
-                #töltőáram kiszámolása
+            else:##itt kell kilĹ‘ni tĂ¶ltĂ¶t starttime alapjĂˇn SELECT `MAC`,`Guardtime` FROM `Device`  WHERE `Charging`=1 ORDER BY `chargestart`
+                #tĂ¶ltĹ‘Ăˇram kiszĂˇmolĂˇsa
                 ndb=int((dI1/6))
                 ndb=db-ndb
                 for y in range(ndb):
                     tmp = aktolt[y]
                     print("stop: "+str(tmp[0]))
                     pause(str(tmp[0]))
-                #6 amperkiküld
+                #6 amperkikĂĽld
                     aktolt=getcharge("I1")
                     db = len(aktolt)
                     for y in range(db):
@@ -303,32 +420,32 @@ def PWRcontrol():
                         print(y)
                         client.publish("/charger/control/", str(tmp[0]) + ";6")
                     print(tmp)
-                print("le kell állítani valakit "+str(ndb))
-        elif ((I1)<((I1max *tart)-10) ) :
+                print("le kell ĂˇllĂ­tani valakit "+str(ndb))
+        elif ((I1)<((I1max *tart)-2) ) :
             pausech = getpause("I1")
             pdb = len(pausech)
-            if(pdb==0):     #mindenki tölt
+            if(pdb==0):     #mindenki tĂ¶lt
 
                 now = datetime.now()
                 timestamp = datetime.timestamp(now)
-                if (Lstopt + 30) < timestamp:
+                if (Lstopt + 5) < timestamp:
                     Lastopt(timestamp)
                     globChange(1)
 
 
             else:
-                print("van "+str(pdb) +" db szünetelő töltő")
+                print("van "+str(pdb) +" db szĂĽnetelĹ‘ tĂ¶ltĹ‘")
                 aktolt = getcharge("I1")
                 db = len(aktolt)
                 if db > 0:
                     for y in range(0, db):
                         tmp = aktolt[y]
-                        TI1 = TI1 + int(tmp[1])  # töltők áramösszege
+                        TI1 = TI1 + int(tmp[1])  # tĂ¶ltĹ‘k ĂˇramĂ¶sszege
                         szummprio = szummprio + int(tmp[2])
                         print(int(TI1))
                     dI1 = I1 - TI1
-                    dI1 = (I1max * tart) - dI1 - 5  # kicsit lőjünk alá
-                    # szabad szétosztható áramok
+                    dI1 = (I1max * tart) - dI1 - 6  # kicsit lĹ‘jĂĽnk alĂˇ
+                    # szabad szĂ©toszthatĂł Ăˇramok
                     print(TI1, dI1, szummprio, db)
                     tmp1 = int(dI1 / 6)
                 else:
@@ -336,13 +453,13 @@ def PWRcontrol():
                 print(tmp1)
                 if tmp1>pdb:
                     tmp1=pdb
-                #visszatesszük a töltőket
+                #visszatesszĂĽk a tĂ¶ltĹ‘ket
                 for y in range(pdb):
                     x=pausech[y]
                     Startclient(x[0], 1)
                     print("RESUME"+ str(x))
     except:
-        print("HIBA+++++++++++ " + query)
+        print(" ")
 
 def imaxsqlupdate(L,I,MAC):
     cursor = mydb.cursor()
@@ -350,7 +467,7 @@ def imaxsqlupdate(L,I,MAC):
         query ="UPDATE `Device` SET `"+L+"`= "+I + " WHERE `MAC`= '" + str(MAC)+ "'"
         cursor.execute(query)
         mydb.commit()
-        print("SIKERES I FRISSITÉS"+query)
+        print("SIKERES I FRISSITĂ‰S"+query)
     except:
         print("HIBA " + query)
 
@@ -362,7 +479,7 @@ def subscribe(client: mqtt_client):
         if x[0] == MacPowermeter:
             now = datetime.now()
             timestamp = datetime.timestamp(now)
-            if (Lstpwr + 15) < timestamp:
+            if (Lstpwr + 0) < timestamp:
                 Lastpwr(timestamp)
                 savesqlpwrmeter(x)
 
@@ -372,7 +489,7 @@ def subscribe(client: mqtt_client):
 
         else:
 
-            if x[1] == "START" : #itt mindenkit meg kell kérni egy státuszra/vagy leszajuk és az utolsó adatok szerint járunk el
+            if x[1] == "START" : #itt mindenkit meg kell kĂ©rni egy stĂˇtuszra/vagy leszajuk Ă©s az utolsĂł adatok szerint jĂˇrunk el
                 print(x[1])
 
             elif x[1] == "StartRequest":
@@ -384,17 +501,20 @@ def subscribe(client: mqtt_client):
                 Startclient(x[0], 0)
                 print("STOP" + x[0])
             else:
-                device=getdevice(x)  #EZ MAJD külső szál lesz
-                                    #töltés
-                print(len(device))
-                for y in range(0, len(device)):    #UPDATE `Device` SET `I1max` = 15 WHERE  `MAC`=112233445566
-                    mac=device[y]
+                device=getdevice(x)  #EZ MAJD kĂĽlsĹ‘ szĂˇl lesz
+                                    #tĂ¶ltĂ©s
 
-                    if mac[0]==x[0]:
-                        savesqlclientpwr(x,mac)
-                        updateclient(x,mac)
-                        print(mac)
-                        print(x[0])
+                print(len(device))
+                try:
+                    for y in range(0, len(device)):    #UPDATE `Device` SET `I1max` = 15 WHERE  `MAC`=112233445566
+                        mac=device[y]
+
+                        if mac[0]==x[0]:
+                            savesqlclientpwr(x,mac)
+                            updateclient(x,mac)
+                            print(mac)
+                            print(x[0])
+                except:  print("itt crash")
 
 
     client.subscribe(TOPIC)
