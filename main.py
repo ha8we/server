@@ -451,9 +451,10 @@ def PWRcontrol():
             dI1= (I1max*tart)-dI1-0 #Szétoszthtó áramok
            # logging.info(str(TI1)+  str(dI1), str(szummprio), str(db))
             tmp1=dI1/szummprio    #elvben számolt szétosztható
+
             if tmp1 > 32:
                 tmp1 = 32
-           # print("NEM TUDOM TEMP +++++++++++++++++++"+str(tmp1))
+            print("NEM TUDOM TEMP +++++++++++++++++++"+str(tmp1))
 
 
             if tmp1 >= 6:
@@ -473,6 +474,7 @@ def PWRcontrol():
                 for y in range(ndb):
                     tmp = aktolt[y]
                     logging.error("Paused charger: "+str(tmp[0]))
+
                     pause(str(tmp[0]))
                     globChange(1)
                 #6 amperkikĂĽld
@@ -490,6 +492,7 @@ def PWRcontrol():
         elif(pdb>0):
             pausech = getpause("I1")
             pdb = len(pausech)
+
             if(pdb==0):     #mindenki tĂ¶lt
 
                 now = datetime.now()
@@ -521,6 +524,7 @@ def PWRcontrol():
                     tmp1=pdb
                     logging.error("Paused charger nummber: LOG:  " + str(pdb))
                     logging.info("Resume charger number: " + str(tmp1))
+                    print("NEM TUDOM TEMP +++++++++++++++++++" + str(tmp1))
                     pausech = getpause("I1")
 
                 #visszatesszĂĽk a tĂ¶ltĹ‘ket
@@ -539,7 +543,11 @@ def PWRcontrol():
                         globChange(1)
                         ######Ha még védett a töltő de van visszakapcsolható akkor kezelni kell
                     ##itt kell szabad kapacitás feltét
-                if ((I1)<((I1max *tart)-5) and tmp1>0):
+                #if ((I1)<((I1max *tart)-5) and tmp1>0):
+
+                # #idemég kell feltéttt
+                print(int(dI1-(db*6)))
+                if ( 5 < (dI1-(db*6)) and tmp1 > 0):
                     for y in range(tmp1):
                         x = pausech[y]
                         Startclient(x[0], 1)
